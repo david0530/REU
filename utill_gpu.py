@@ -18,13 +18,13 @@ def load_edge_data(edge_filepath):
     edge_data = torch.load(edge_filepath)
     eFC = edge_data['eFC']
     labels = edge_data['label']
-    if isinstance(labels, int):  # If labels are mistakenly saved as a single integer
-        labels = [labels]  # Convert to list for consistency
+    if isinstance(labels, int):  
+        labels = [labels]  
     return eFC, labels
 
 def load_node_data(node_filepath):
     mat = scipy.io.loadmat(node_filepath)
-    node_features = mat['data']  # Adjust according to the actual key in the .mat file
+    node_features = mat['data']  
     return node_features
 
 def create_transition_matrix(n_nodes, u, v):
@@ -37,12 +37,12 @@ def create_transition_matrix(n_nodes, u, v):
 def load_edge_features(edge_feature_path):
     edge_features = np.load(edge_feature_path)
     edge_features_mean = np.mean(edge_features, axis=0).reshape(-1, 1)
-    return torch.tensor(edge_features_mean, dtype=torch.float32).to(device)
+    return torch.tensor(edge_features_mean, dtype=torch.float32)
 
 def sparse_mx_to_torch_sparse_tensor(sparse_mx):
     sparse_mx = sparse_mx.tocoo().astype(np.float32)
-    indices = torch.from_numpy(np.vstack((sparse_mx.row, sparse_mx.col)).astype(np.int64)).to(device)
-    values = torch.from_numpy(sparse_mx.data).to(device)
+    indices = torch.from_numpy(np.vstack((sparse_mx.row, sparse_mx.col)).astype(np.int64))
+    values = torch.from_numpy(sparse_mx.data)
     shape = torch.Size(sparse_mx.shape)
     return torch.sparse_coo_tensor(indices, values, shape)
 
@@ -55,7 +55,7 @@ def normalize(mx):
 
 def get_id_from_filename(filename):
     import re
-    pattern = r'sub-([a-zA-Z0-9]+)'  # Adjusted pattern to capture alphanumeric IDs
+    pattern = r'sub-([a-zA-Z0-9]+)' 
     match = re.search(pattern, filename)
     if match:
         return match.group(1)
@@ -93,25 +93,26 @@ def prepare_data(edge_files, node_files, edge_feature_files, edge_dir, node_dir,
             node_features = load_node_data(node_filepath)
             edge_features = load_edge_features(edge_feature_path)
 
-            eadj = sparse_mx_to_torch_sparse_tensor(csr_matrix(eadj)).to(device)
+            eadj = sparse_mx_to_torch_sparse_tensor(csr_matrix(eadj))
             n_nodes = node_features.shape[0]
             node_adj = create_fully_connected_adj(n_nodes)
-            node_adj = sparse_mx_to_torch_sparse_tensor(csr_matrix(node_adj)).to(device)
+            node_adj = sparse_mx_to_torch_sparse_tensor(csr_matrix(node_adj))
             u, v = np.triu_indices(n_nodes, k=1)
             transition_matrix = create_transition_matrix(n_nodes, u, v)
-            transition_matrix = torch.FloatTensor(transition_matrix).to(device)
+            transition_matrix = torch.FloatTensor(transition_matrix)
             normalized_features = normalize(csr_matrix(node_features))
-            normalized_features = torch.FloatTensor(normalized_features.todense()).to(device)
-            labels_tensor = torch.tensor(labels, dtype=torch.long).to(device)
-            data.append((normalized_features, edge_features.to(device), eadj, node_adj, transition_matrix, labels_tensor))
+            normalized_features = torch.FloatTensor(normalized_features.todense())
+            labels_tensor = torch.tensor(labels, dtype=torch.long)
+            data.append((normalized_features, edge_features, eadj, node_adj, transition_matrix, labels_tensor))
     return data
 
 def train(model, optimizer, criterion, train_data, log_file, epoch):
     model.train()
     with open(log_file, 'a') as f:
         for data in train_data:
-            normalized_features, edge_features, eadj, node_adj, transition_matrix, labels_tensor = data
-            batch_indices = torch.zeros(len(labels_tensor), dtype=torch.long).to(device)  # Assuming single batch for simplicity
+            # Move data to device (GPU) for training
+            normalized_features, edge_features, eadj, node_adj, transition_matrix, labels_tensor = [d.to(device) for d in data]
+            batch_indices = torch.zeros(len(labels_tensor), dtype=torch.long).to(device)  
 
             # Forward pass
             outputs = model(normalized_features, edge_features, eadj, node_adj, transition_matrix, batch_indices)
@@ -133,8 +134,9 @@ def test(model, criterion, test_data, log_file, epoch):
     with open(log_file, 'a') as f:
         with torch.no_grad():
             for data in test_data:
-                normalized_features, edge_features, eadj, node_adj, transition_matrix, labels_tensor = data
-                batch_indices = torch.zeros(len(labels_tensor), dtype=torch.long).to(device)  # Assuming single batch for simplicity
+                # Move data to device (GPU) for testing
+                normalized_features, edge_features, eadj, node_adj, transition_matrix, labels_tensor = [d.to(device) for d in data]
+                batch_indices = torch.zeros(len(labels_tensor), dtype=torch.long).to(device)  
 
                 # Forward pass
                 outputs = model(normalized_features, edge_features, eadj, node_adj, transition_matrix, batch_indices)
@@ -154,7 +156,7 @@ def test(model, criterion, test_data, log_file, epoch):
     return accuracy, avg_loss
 
 def main():
-    edge_dir = '/home/djyang/EdgeC/PPMI_eFC_data_mini'
+    edge_dir = '/home/djyang/EdgeC/PPMI_eFC_data'
     node_dir = '/home/djyang/ppmi'
     edge_feature_dir = '/home/djyang/EdgeC/eTC'
 
@@ -162,11 +164,10 @@ def main():
     node_files = search_node_files(node_dir)
     edge_feature_files = [f for f in os.listdir(edge_feature_dir) if f.endswith('.npy')]
 
-    # Initialize the GCN model and optimizer
-    nfeat_v = 116  # Adjust this based on your node feature dimension
-    nfeat_e = 1    # Adjust this based on your edge feature dimension
+    nfeat_v = 116 
+    nfeat_e = 1   
     nhid = 16
-    nclass = 4     # Adjust according to the number of classes in your labels
+    nclass = 4    
     dropout = 0.5
     model = GCN(nfeat_v, nfeat_e, nhid, nclass, dropout).to(device)
     optimizer = optim.Adam(model.parameters(), lr=0.0001)
@@ -182,7 +183,7 @@ def main():
         os.remove(log_file)  # Remove the log file if it already exists to start fresh
 
     # Training and testing phase
-    num_epochs = 50  # Define the number of epochs
+    num_epochs = 300
     for epoch in range(num_epochs):
         train(model, optimizer, criterion, train_data, log_file, epoch)
         accuracy, avg_loss = test(model, criterion, test_data, log_file, epoch)
